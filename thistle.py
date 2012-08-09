@@ -42,6 +42,8 @@ import threading
 import signal
 import time
 import logging
+import sqlite3
+import contextlib
 
 from compat import *
 
@@ -49,12 +51,12 @@ from compat import *
 STOP_THREAD = "STOP_THREAD"
 PATH = os.path.dirname(os.path.abspath(__file__))
 LOGGER = logging.getLogger("thistle")
+KERNEL = None
 # }}}
 
 class EventThread(threading.Thread): # {{{
-  def __init__(self, monitor):
+  def __init__(self):
     threading.Thread.__init__(self)
-    self.monitor = monitor
     self.queue = queue.Queue()
 
   def stop(self):
@@ -64,18 +66,17 @@ class EventThread(threading.Thread): # {{{
   def run(self):
     while True:
       try:
-        next_item = self.queue.get(timeout=10)
+        next_item = self.queue.get()
         if next_item is STOP_THREAD: 
           self.queue.task_done()
           break
-        self.monitor._callback(*next_item)
+        next_item[0]._callback(*next_item[1])
         self.queue.task_done()
       except queue.Empty:
         pass
 # }}}
 
 class Monitor(threading.Thread): # {{{
-  EVENT_CRIT  = logging.CRITICAL
   EVENT_ERROR = logging.ERROR
   EVENT_WARN  = logging.WARNING
   EVENT_INFO  = logging.INFO
@@ -83,7 +84,6 @@ class Monitor(threading.Thread): # {{{
       "interval": 300,
       "messages": {},
       "callback": {
-        EVENT_CRIT  : [],
         EVENT_ERROR : [],
         EVENT_WARN  : [],
         EVENT_INFO  : []
@@ -92,21 +92,21 @@ class Monitor(threading.Thread): # {{{
 
   def __init__(self, configs):
     threading.Thread.__init__(self)
+
     self.config = self.default_config()
     for k,v in iter_items(configs):
       self.config[k] = v
     self.init_config()
     self.queue = queue.Queue()
-    self.event_thread = EventThread(self)
 
   def default_config(self):
     return Monitor.DEFAULT_CONFIG.copy()
 
   def init_config(self): raise NotImplementedError()
 
-  def change_state(self, dct, state, callback_args):
+  def change_state(self, dct, state, callback_args, check_state = True):
     pre_state = dct["__state__"]
-    if pre_state == state:
+    if pre_state == state and check_state:
       return
     dct["__state__"] = state
     message = "["+self.__class__.__name__ + "] " + self.config["messages"][state].format(**dct)
@@ -122,18 +122,15 @@ class Monitor(threading.Thread): # {{{
       callback(*args)
 
   def callback(self, *args):
-    self.event_thread.queue.put(args)
+    KERNEL.event_thread.queue.put((self, args))
 
   def monitor(self): raise NotImplementedError()
 
   def stop(self):
     self.queue.put(STOP_THREAD)
-    self.event_thread.stop()
     self.queue.join()
 
   def run(self):
-    self.event_thread.start()
-
     while True:
       self.monitor()
       try:
@@ -181,10 +178,10 @@ class CommandOutputVarMonitor(Monitor): # {{{
   def default_config(self):
     config = Monitor.default_config(self)
     config["vars"] = []
-    config["messages"]["gt_e"] = "{name}: {__value__:d} (> {lt_e:d})."
-    config["messages"]["lt_e"] = "{name}: {__value__:d} (< {gt_e:d})."
-    config["messages"]["gt_w"] = "{name}: {__value__:d} (> {lt_w:d})."
-    config["messages"]["lt_w"] = "{name}: {__value__:d} (< {gt_w:d})."
+    config["messages"]["gt_e"] = "{name}: {__value__:d} (> {gt_e:d})."
+    config["messages"]["lt_e"] = "{name}: {__value__:d} (< {lt_e:d})."
+    config["messages"]["gt_w"] = "{name}: {__value__:d} (> {gt_w:d})."
+    config["messages"]["lt_w"] = "{name}: {__value__:d} (< {lt_w:d})."
     config["messages"]["ne"] = "{name}: {__value__:d} (!= {ne:d})"
     config["messages"]["command_e"] = "{command} : invalid output. var {name} not found."
     config["messages"]["normal"] = "{name}: resume normal operation."
@@ -227,14 +224,159 @@ class CommandOutputVarMonitor(Monitor): # {{{
 
 # }}}
 
+class DBThread(threading.Thread): # {{{
+  db_file = os.path.join(PATH, "dat", "thistle.db")
+  def __init__(self, *args, **kw):
+    threading.Thread.__init__(self)
+    self.queue = queue.Queue()
+
+  def stop(self):
+    self.queue.put(STOP_THREAD)
+    self.queue.join()
+
+  def with_conn(self, f):
+    self.queue.put(f)
+    
+  def run(self):
+    if not os.path.exists(self.__class__.db_file):
+      conn = sqlite3.connect(self.__class__.db_file)
+      cur = conn.cursor()
+      cur.execute('''create table file_stat (file text, seek int)''')
+      conn.commit()
+      conn.close()
+    self.conn = sqlite3.connect(self.__class__.db_file)
+
+    while True:
+      try:
+        next_item = self.queue.get()
+        if next_item is STOP_THREAD: 
+          self.conn.close()
+          self.queue.task_done()
+          break
+        next_item(self.conn)
+        self.queue.task_done()
+      except queue.Empty:
+        pass
+# }}}
+
+class LogMonitor(Monitor): # {{{
+  def __init__(self, *args, **kw):
+    Monitor.__init__(self, *args, **kw)
+
+  def default_config(self):
+    config = Monitor.default_config(self)
+    config["targets"] = []
+    config["messages"]["error"] = "{file}: {message}({__line__})"
+    config["messages"]["not_readable_error"] = "File {file} is not readable or not exists."
+    config["messages"]["truncated"] = "File {file} was truncated."
+    config["messages"]["warn"] = "{file}: {message}({__line__})"
+    config["messages"]["info"] = "{file}: {message}({__line__})"
+    return config
+
+  def update_seek(self, pos):
+    def f(conn):
+      cur = conn.cursor()
+      cur.execute("BEGIN")
+      cur.execute("update file_stat set seek = ? where file=?", (pos, self.config["file"]))
+      conn.commit()
+    KERNEL.db_thread.with_conn(f)
+
+  def stop(self):
+    Monitor.stop(self)
+    if self.config["__io__"] is not None:
+      self.config["__io__"].close()
+
+  def init_config(self):
+    self.init_state(self.config)
+    for target in self.config["targets"]:
+      self.init_state(target)
+      target["__pattern__"] = re.compile(target["pattern"])
+      target["file"] = self.config["file"]
+
+    if not os.access(self.config["file"], os.R_OK):
+      self.change_state(self.config, "not_readable_error", [Monitor.EVENT_ERROR, self.config])
+      self.config["__io__"] = None
+    else:
+      self.open_file()
+
+  def open_file(self):
+    if self.config.get("__io__"):
+      self.config["__io__"].close()
+    self.config["__io__"] = open(self.config["file"])
+    self.config["__size__"] = os.path.getsize(self.config["file"])
+
+    def f(conn):
+      cur = conn.cursor()
+      cur.execute("select * from file_stat where file=?", (self.config["file"],))
+      row = cur.fetchone()
+      if not row:
+        cur.execute("BEGIN")
+        cur.execute("insert into file_stat values (?, ?)", (self.config["file"], 0))
+        conn.commit()
+        row = [self.config["file"], 0]
+      if self.config["__io__"]:
+        self.config["__io__"].seek(row[1])
+      LOGGER.info("Open file: {} (seek: {}).".format(self.config["file"], row[1]))
+    KERNEL.db_thread.with_conn(f)
+
+  def monitor(self):
+    io = self.config["__io__"]
+    if io is None:
+      if os.access(self.config["file"], os.R_OK):
+        self.open_file()
+        io = self.config["__io__"]
+      else:
+        return
+    else:
+      try:
+        new_size = os.path.getsize(self.config["file"])
+      except:
+        self.change_state(self.config, "not_readable_error", [Monitor.EVENT_ERROR, self.config])
+        self.config["__io__"] = None
+        return
+        
+      if new_size < self.config["__size__"]:
+        self.change_state(self.config, "truncated", [Monitor.EVENT_INFO, self.config])
+        self.open_file()
+        io = self.config["__io__"]
+
+    while True:
+      where = io.tell()
+      line = io.readline()
+
+      if not line:
+        io.seek(where)
+        break
+
+      for target in self.config["targets"]:
+        if line:
+          m = target["__pattern__"].match(line)
+          if m:
+            target["__line__"] = line
+            level = target.get("level", Monitor.EVENT_ERROR)
+            if level == Monitor.EVENT_ERROR:
+              self.change_state(target, "error", [level, target, m], check_state=False)
+            elif level == Monitor.EVENT_WARN:
+              self.change_state(target, "warn", [level, target, m], check_state=False)
+            else:
+              self.change_state(target, "info", [level, target, m], check_state=False)
+      self.update_seek(io.tell())
+
+# }}}
+
 class Kernel(object): # {{{
   def __init__(self, config):
     self.config = config
 
   def signal_handler(self, sig, frame):
     LOGGER.info("==== Receive SIGINT signal......... ====")
-    for monitor in self.config["monitors"]:
+    for monitor in self.monitors:
+      LOGGER.info("Stopping a monitor: {}".format(monitor.__class__.__name__))
       monitor.stop()
+    LOGGER.info("Stopping an event thread.")
+    self.event_thread.stop()
+    LOGGER.info("Stopping a db thread.")
+    self.db_thread.stop()
     LOGGER.info("==== Shutting down thistle: success ====")
     sys.exit(0)
 
@@ -244,13 +386,26 @@ class Kernel(object): # {{{
       io.write(u_(os.getpid()))
     signal.signal(signal.SIGINT, self.signal_handler)
 
-    for monitor in self.config["monitors"]:
+    self.db_thread = DBThread()
+    LOGGER.info("Starting up a db thread.")
+    self.db_thread.start()
+    self.event_thread = EventThread()
+    LOGGER.info("Starting up an event thread.")
+    self.event_thread.start()
+
+    self.monitors = []
+    for monitor_spec in self.config["monitors"]:
+      monitor = monitor_spec[0](monitor_spec[1])
+      self.monitors.append(monitor)
       LOGGER.info("Starting up monitor: {}".format(monitor.__class__.__name__))
       monitor.start()
 
     LOGGER.info("==== Starting up thistle: success ====")
     while True:
-      time.sleep(60)
+      try:
+        time.sleep(60)
+      except KeyboardInterrupt:
+        self.stop()
 
   def stop(self):
     with open(self.config["pid_file"]) as io:
@@ -272,7 +427,7 @@ if __name__ == "__main__": # {{{
   import plugins
   sys.modules["thistle.plugins"] = plugins
   config = __import__(re.sub("\.py$", "", os.path.basename(args.config)))
-  kernel = Kernel(config.config)
-  getattr(kernel, args.command)()
+  KERNEL = Kernel(config.config)
+  getattr(KERNEL, args.command)()
 #  }}}
 

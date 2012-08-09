@@ -12,11 +12,22 @@ start(){
     exit 1
   fi
   echo -n "Starting thistle: "
-  nohup ${THISTLE} ${ARGS} -c ${CONF_FILE} start >&- 2>&- <&- &
+  ${THISTLE} ${ARGS} -c ${CONF_FILE} start &
+  bgid=$!
+  jobid=`jobs -l | grep -e " ${bgid} " | awk '{print $1}' | tr -d "[]+-"`
+  expr ${jobid} + 1 > /dev/null 2>&1
+  if [ $? -ne 0 ]; then
+    echo "NG"
+    ${THISTLE} -h
+    exit $?
+  fi
+
+  disown %${jobid}
   sleep 3
   if [ `status` = "NG" ]; then
     echo "NG"
     ${THISTLE} -h
+    exit $?
   else
     echo "OK"
     exit 0

@@ -19,7 +19,6 @@ def log_message(level, message, *args):
 
 Monitor.DEFAULT_CONFIG.update({
   "callback": {
-    Monitor.EVENT_CRIT:  [log_message],
     Monitor.EVENT_ERROR: [log_message],
     Monitor.EVENT_WARN:  [log_message],
     Monitor.EVENT_INFO:  [log_message]
@@ -29,7 +28,7 @@ Monitor.DEFAULT_CONFIG.update({
 config = {
   "pid_file": os.path.join(PATH, "dat", "thistle.pid"),
   "monitors": [
-    ProcessMonitor({
+    (ProcessMonitor, {
       "interval": 10,
       "targets": [
         {"name": "sleep process",
@@ -38,7 +37,7 @@ config = {
          "max": 1}
       ]
     }),
-    CommandOutputVarMonitor({
+    (CommandOutputVarMonitor, {
       "interval": 10,
       "command" : [os.path.join(PATH, "plugins", "sysinfo.sh")],
       "vars": [
@@ -54,6 +53,28 @@ config = {
          "gt_e" : 95,
          "gt_w" : 85
         },
+      ]
+    }),
+    (LogMonitor, {
+      "interval": 10,
+      "file": "/home/foo/test.log",
+      "targets": [
+        {"pattern": ".*error.*",
+         "message": "error has occurred."},
+        {"pattern": ".*warn.*",
+         "message": "warn has occurred.",
+         "level": Monitor.EVENT_WARN}
+      ]
+    }),
+    (LogMonitor, {
+      "interval": 10,
+      "file": "/home/foo/test1.log",
+      "targets": [
+        {"pattern": ".*hoge.*",
+         "message": "hoge has occurred."},
+        {"pattern": ".*warn.*",
+         "message": "foo has occurred.",
+         "level": Monitor.EVENT_WARN}
       ]
     })
   ]

@@ -54,14 +54,12 @@ if PY3:
       return s.decode("latin1")
     return unicode(s)
 
-  from urllib.parse import urlparse, urljoin, parse_qsl, SplitResult as UrlSplitResult
-  from urllib.parse import urlencode, quote as urlquote, unquote as urlunquote
-  from http.cookies import SimpleCookie
+  #from urllib.parse import urlparse, urljoin, parse_qsl, SplitResult as UrlSplitResult
+  #from urllib.parse import urlencode, quote as urlquote, unquote as urlunquote
+  #from http.cookies import SimpleCookie
   import queue
   import pickle
   from io import BytesIO
-  import imp
-  reload = imp.reload
 
 else:
   bytes = str
@@ -106,9 +104,9 @@ def reraise(e, v, t):
       return s.encode("latin1")
     return bytes(s)
 
-  from urlparse import urlparse, urljoin, parse_qsl, SplitResult as UrlSplitResult
-  from urllib import urlencode, quote as urlquote, unquote as urlunquote
-  from Cookie import SimpleCookie
+  #from urlparse import urlparse, urljoin, parse_qsl, SplitResult as UrlSplitResult
+  #from urllib import urlencode, quote as urlquote, unquote as urlunquote
+  #from Cookie import SimpleCookie
   import Queue as queue
   try:
     import cPickle as pickle
