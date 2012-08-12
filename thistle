@@ -10,7 +10,7 @@ start_func(){
     exit 1
   fi
   echo -n "Starting thistle: "
-  nohup ${THISTLE} -c ${CONF_FILE} start 0<&- 1>/dev/null 2>&1 &
+  nohup ${THISTLE} -c ${CONF_FILE} start >&- 2>&- <&- &
   sleep 3
   if [ `status_func` = "NG" ]; then
     echo "NG"

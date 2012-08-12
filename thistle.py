@@ -50,7 +50,10 @@ from compat import *
 
 # module globals {{{
 STOP_THREAD = "STOP_THREAD"
-PATH = os.path.dirname(os.path.abspath(__file__))
+FILE_PATH = os.path.abspath(__file__)
+if os.path.islink(FILE_PATH):
+  FILE_PATH = os.readlink(FILE_PATH)
+PATH = os.path.dirname(FILE_PATH)
 LOGGER = logging.getLogger("thistle")
 KERNEL = None
 
@@ -72,7 +75,6 @@ class EventThread(threading.Thread): # {{{
 
   def stop(self):
     self.queue.put(STOP_THREAD)
-    self.queue.join()
 
   def run(self):
     while True:
@@ -139,7 +141,6 @@ class Monitor(threading.Thread): # {{{
 
   def stop(self):
     self.queue.put(STOP_THREAD)
-    self.queue.join()
 
   def run(self):
     while True:
@@ -243,13 +244,14 @@ class DBThread(threading.Thread): # {{{
 
   def stop(self):
     self.queue.put(STOP_THREAD)
-    self.queue.join()
 
   def with_conn(self, f):
     self.queue.put(f)
     
   def run(self):
+    LOGGER.info("DB file: {}.".format(self.__class__.db_file))
     if not os.path.exists(self.__class__.db_file):
+      LOGGER.info("Create new db: {}.".format(self.__class__.db_file))
       conn = sqlite3.connect(self.__class__.db_file)
       cur = conn.cursor()
       cur.execute('''create table file_stat (file text, seek int)''')
