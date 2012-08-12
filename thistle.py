@@ -365,7 +365,7 @@ class LogMonitor(Monitor): # {{{
         if line:
           m = target["__pattern__"].match(line)
           if m:
-            target["__line__"] = line
+            target["__line__"] = line.strip()
             level = target.get("level", Monitor.EVENT_ERROR)
             if level == Monitor.EVENT_ERROR:
               self.change_state(target, "error", [level, target, m], check_state=False)
