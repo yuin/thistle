@@ -1,9 +1,10 @@
 from __future__ import print_function
 import os.path
 from thistle import *
+import thistle.plugins.mailnotification
 
-log_file = os.path.join(PATH, "dat", "thistle.log")
 def setup_logger():
+  log_file = "/var/log/thistle/thistle.log"
   import logging, logging.handlers, subprocess
   LOGGER.setLevel(logging.DEBUG)
   host=subprocess.check_output("hostname").strip()
@@ -17,16 +18,25 @@ setup_logger()
 def log_message(level, message, *args):
   LOGGER.log(level, message)
 
+email_notification = thistle.plugins.mailnotification.SmtpMailNotification(
+  host="smtp.gmail.com",
+  port=587,
+  user="your address",
+  password="your password",
+  from_addr="from_addr",
+  to_addr="to_addr"
+)
+
 Monitor.DEFAULT_CONFIG.update({
   "callback": {
-    Monitor.EVENT_ERROR: [log_message],
+    Monitor.EVENT_ERROR: [log_message, email_notification],
     Monitor.EVENT_WARN:  [log_message],
     Monitor.EVENT_INFO:  [log_message]
   }
 })
 
 config = {
-  "pid_file": os.path.join(PATH, "dat", "thistle.pid"),
+  "pid_file": "/var/run/thistle.pid",
   "monitors": [
     (ProcessMonitor, {
       "interval": 10,

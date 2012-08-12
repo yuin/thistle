@@ -1,32 +1,19 @@
 #!/bin/bash
 
-cd `dirname $0`
-BASE_DIR=`pwd`
-THISTLE="python thistle.py"
-PID_FILE="${BASE_DIR}/dat/thistle.pid"
-CONF_FILE="${BASE_DIR}/user/config.py"
+THISTLE=`which thistle`
+PID_FILE="/var/run/thistle.pid"
+CONF_FILE="/etc/thistle/config.py"
 
-start(){
-  if pid=`status` >/dev/null ;then
+start_func(){
+  if pid=`status_func` >/dev/null ;then
     echo "\`thistle' is already running: $pid"
     exit 1
   fi
   echo -n "Starting thistle: "
-  ${THISTLE} ${ARGS} -c ${CONF_FILE} start &
-  bgid=$!
-  jobid=`jobs -l | grep -e " ${bgid} " | awk '{print $1}' | tr -d "[]+-"`
-  expr ${jobid} + 1 > /dev/null 2>&1
-  if [ $? -ne 0 ]; then
-    echo "NG"
-    ${THISTLE} -h
-    exit $?
-  fi
-
-  disown %${jobid}
+  nohup ${THISTLE} -c ${CONF_FILE} start 0<&- 1>/dev/null 2>&1 &
   sleep 3
-  if [ `status` = "NG" ]; then
+  if [ `status_func` = "NG" ]; then
     echo "NG"
-    ${THISTLE} -h
     exit $?
   else
     echo "OK"
@@ -34,8 +21,8 @@ start(){
   fi
 }
 
-stop(){
-  if pid=`status` >/dev/null ;then
+stop_func(){
+  if pid=`status_func` >/dev/null ;then
     echo -n "Stopping thistle: "
     ${THISTLE} ${ARGS} -c ${CONF_FILE} stop
     [ $? -ne 0 ] && echo NG || echo OK
@@ -45,7 +32,12 @@ stop(){
   exit 1
 }
 
-status(){
+test_func(){
+  ${THISTLE} ${ARGS} -c ${CONF_FILE} test
+  exit $?
+}
+
+status_func(){
   if [ -s $PID_FILE ];then
     pid=`cat $PID_FILE`
     if [ -d /proc/$pid ];then
@@ -62,13 +54,16 @@ shift
 ARGS="$*"
 case "${CMD}" in
   start)
-    start
+    start_func
     ;;
   stop)
-    stop
+    stop_func
+    ;;
+  test)
+    test_func
     ;;
   status)
-    status
+    status_func
     ;;
   *)
     ${THISTLE} -h

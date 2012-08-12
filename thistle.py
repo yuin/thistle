@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 #vim: fileencoding=utf8
 """
 thistle - A minimal server monitoring tool set for small systems.
@@ -52,6 +53,16 @@ STOP_THREAD = "STOP_THREAD"
 PATH = os.path.dirname(os.path.abspath(__file__))
 LOGGER = logging.getLogger("thistle")
 KERNEL = None
+
+def level_string(level):
+  if level == Monitor.EVENT_ERROR:
+    return "ERROR"
+  elif level == Monitor.EVENT_WARN:
+    return "WARN"
+  elif level == Monitor.EVENT_INFO:
+    return "INFO"
+  else:
+    return "UNKNOWN"
 # }}}
 
 class EventThread(threading.Thread): # {{{
@@ -420,14 +431,26 @@ if __name__ == "__main__": # {{{
   parser = argparse.ArgumentParser()
   parser.add_argument('-c', dest="config",
                       help="configuration file path", required=True)
-  parser.add_argument('command', choices=["start", "stop"])
+  parser.add_argument('command', choices=["start", "stop", "test"])
   args = parser.parse_args()
-  sys.path.insert(0, os.path.join(PATH, "user"))
+  sys.path.insert(0, os.path.join(os.path.dirname(args.config)))
   sys.modules["thistle"] = sys.modules["__main__"]
   import plugins
   sys.modules["thistle.plugins"] = plugins
-  config = __import__(re.sub("\.py$", "", os.path.basename(args.config)))
-  KERNEL = Kernel(config.config)
-  getattr(KERNEL, args.command)()
+  try:
+    config = __import__(re.sub("\.py$", "", os.path.basename(args.config)))
+    if args.command == "test":
+      print("OK")
+  except:
+    if args.command == "test":
+      import traceback
+      print("NG:")
+      traceback.print_exc()
+      sys.exit(1)
+    else:
+      raise
+  if args.command != "test":
+    KERNEL = Kernel(config.config)
+    getattr(KERNEL, args.command)()
 #  }}}
 
