@@ -1,12 +1,15 @@
 thistle
 =======================================
 
-* thistle is a server monitoring app for small systems(i.e. Raspberry PI).
-* thistle requires less disk space since it is a simple python script.
+* thistle is a server monitoring app for small systems.
 
 How to use thistle
 ---------------------------------------
 
-* edit ``user/config.py``
-* ``./thistle.sh start``
+* clone this repos
+* as root user, cp -R thistle /opt/
+* cd /opt/thistle/
+* ./setup.sh install
+* edit /etc/thistle/config.py
+* service thistle start
 
