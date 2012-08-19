@@ -83,7 +83,11 @@ class EventThread(threading.Thread): # {{{
         if next_item is STOP_THREAD: 
           self.queue.task_done()
           break
-        next_item[0]._callback(*next_item[1])
+        try:
+          next_item[0]._callback(*next_item[1])
+        except Exception as e:
+          LOGGER.error("Failed to execute a callback: {}".format(u_(e)))
+
         self.queue.task_done()
       except queue.Empty:
         pass
@@ -323,19 +327,28 @@ class LogMonitor(Monitor): # {{{
     self.config["__io__"] = open(self.config["file"])
     self.config["__size__"] = os.path.getsize(self.config["file"])
 
+    flag = {"truncated": False}
     def f(conn):
       cur = conn.cursor()
       cur.execute("select * from file_stat where file=?", (self.config["file"],))
-      row = cur.fetchone()
+      row = list(cur.fetchone())
       if not row:
         cur.execute("BEGIN")
         cur.execute("insert into file_stat values (?, ?)", (self.config["file"], 0))
         conn.commit()
         row = [self.config["file"], 0]
       if self.config["__io__"]:
-        self.config["__io__"].seek(row[1])
+        if self.config["__size__"] < row[1]:
+          self.change_state(self.config, "truncated", [Monitor.EVENT_INFO, self.config])
+          flag["truncated"] = True
+          self.config["__io__"].seek(0)
+          row = [self.config["file"], 0]
+        else:
+          self.config["__io__"].seek(row[1])
       LOGGER.info("Open file: {} (seek: {}).".format(self.config["file"], row[1]))
     KERNEL.db_thread.with_conn(f)
+    if flag["truncated"]:
+      self.update_seek(0)
 
   def monitor(self):
     io = self.config["__io__"]
@@ -353,8 +366,9 @@ class LogMonitor(Monitor): # {{{
         self.config["__io__"] = None
         return
         
-      if new_size < self.config["__size__"]:
+      if new_size < io.tell():
         self.change_state(self.config, "truncated", [Monitor.EVENT_INFO, self.config])
+        self.update_seek(0)
         self.open_file()
         io = self.config["__io__"]
 
