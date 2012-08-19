@@ -4,13 +4,28 @@ THISTLE=`which thistle`
 PID_FILE="/var/run/thistle.pid"
 CONF_FILE="/etc/thistle/config.py"
 
+if [ -f /etc/init.d/functions ]; then
+  . /etc/init.d/functions
+  daemonize () {
+    daemon ${THISTLE} -c ${CONF_FILE} start
+  }
+fi
+
+if [ -f /lib/lsb/init-functions ]; then
+  . /lib/lsb/init-functions
+  daemonize () {
+    /sbin/start-stop-daemon --start --oknodo --background --exec "${THISTLE}" -- -c ${CONF_FILE} start
+  }
+fi
+
 start_func(){
   if pid=`status_func` >/dev/null ;then
     echo "\`thistle' is already running: $pid"
     exit 1
   fi
+
   echo -n "Starting thistle: "
-  nohup ${THISTLE} -c ${CONF_FILE} start >&- 2>&- <&- &
+  daemonize
   sleep 3
   if [ `status_func` = "NG" ]; then
     echo "NG"
