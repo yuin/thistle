@@ -3,6 +3,7 @@
 # Basic system info for the thistle.CommandOutputVarMonitor
 # variables:
 #   CPU_USAGE (%) : uses top -b -n1
+#   LOAD_AVERAGE_[1|5|15] : uses top -b -n1, such as "0.01"
 #   MEM_USAGE (%) : uses free
 #   DISK_USAGE_[mount point name] (%) : uses df
 #     i.e) DISK_USAGE_/, DISK_USAGE_/var
@@ -19,8 +20,12 @@ MEM_USAGE=`echo ${USED_MEM} ${TOTAL_MEM} | awk '{ print int($1 / $2 * 100) }'`
 
 TOP=`top -b -n1`
 CPU_USAGE=`echo "${TOP}" | grep '^Cpu' | sed -e s/%us,// | awk '{print int($2)}'`
+LOAD_AVERAGES=(`echo "${TOP}" | grep 'load average' | awk '{gsub(/,/, "")}{i=NF-2;j=NF-1; print $i " " $j " " $NF}'`)
 
 echo "CPU_USAGE=${CPU_USAGE}"
+echo "LOAD_AVERAGE_1=${LOAD_AVERAGES[0]}"
+echo "LOAD_AVERAGE_5=${LOAD_AVERAGES[1]}"
+echo "LOAD_AVERAGE_15=${LOAD_AVERAGES[2]}"
 echo "MEM_USAGE=${MEM_USAGE}"
 OLD_IFS=$IFS
 IFS=$'\n'

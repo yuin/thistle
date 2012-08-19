@@ -208,9 +208,14 @@ class CommandOutputVarMonitor(Monitor): # {{{
     output = subprocess.check_output(self.config["command"]).splitlines()
     values = {}
     for line in output:
-      m = re.match("([^=]+)=(\d+)", line)
+      m = re.match("([^=]+)=([\-\+]?\d+)", line)
       if m:
         values[m.group(1)] = int(m.group(2))
+      else:
+        m = re.match("([^=]+)=([\-\+]?\d+\.\d+)", line)
+        if m:
+          values[m.group(1)] = float(m.group(2))
+
 
     for var in self.config["vars"]:
       var["command"] = self.config["command"]
