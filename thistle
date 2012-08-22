@@ -1,28 +1,23 @@
 #!/bin/bash
+# chkconfig: 35 99 01
+# description: a server monitoring app
 
 export PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+if [ -f /etc/thistle/defaults ]; then
+  source /etc/thistle/defaults
+fi
 THISTLE=`which thistle`
 PID_FILE="/var/run/thistle.pid"
 CONF_FILE="/etc/thistle/config.py"
 
-if [ -f /etc/init.d/functions ]; then
-  . /etc/init.d/functions
-  daemonize () {
-    daemon ${THISTLE} -c ${CONF_FILE} start
-  }
-fi
-
-if [ -f /etc/rc.d/init.d/functions ]; then
-  . /etc/rc.d/init.d/functions
-  daemonize () {
-    daemon ${THISTLE} -c ${CONF_FILE} start
-  }
-fi
-
-if [ -f /lib/lsb/init-functions ]; then
-  . /lib/lsb/init-functions
+which start-stop-daemon > /dev/null 2>&1
+if [ $? -eq 0 ]; then
   daemonize () {
     /sbin/start-stop-daemon --start --oknodo --background --exec "${THISTLE}" -- -c ${CONF_FILE} start
+  }
+else
+  daemonize () {
+    nohup ${THISTLE} -c ${CONF_FILE} start 0<&- 1>/dev/null 2>&1 &
   }
 fi
 
@@ -89,6 +84,6 @@ case "${CMD}" in
     status_func
     ;;
   *)
-    ${THISTLE} -h
+    echo "Usage: thistle [start|stop|test|status]"
     exit 1
 esac

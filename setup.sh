@@ -1,7 +1,15 @@
 #!/bin/bash
 
+export PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+
 cd `dirname $0`
 BASE_DIR=`pwd`
+which chkconfig > /dev/null 2>&1
+if [ $? -eq 0 ]; then
+  CHKCONFIG=1
+else
+  CHKCONFIG=0
+fi
 
 install () {
   if [ ! -e /usr/local/bin/thistle ]; then
@@ -25,8 +33,15 @@ install () {
   if [ ! -e /etc/init.d/thistle ]; then
     echo "cp ${BASE_DIR}/thistle /etc/init.d/thistle"
     cp ${BASE_DIR}/thistle /etc/init.d/thistle
-    echo "update-rc.d thistle defaults"
-    update-rc.d thistle defaults
+    if [ $CHKCONFIG -eq 1 ]; then
+      echo "chkconfig --add thistle"
+      chkconfig --add thistle
+      echo "chkconfig thistle on"
+      chkconfig thistle on
+    else
+      echo "update-rc.d thistle defaults 99 01"
+      update-rc.d thistle defaults 99 01
+    fi
   fi
 }
 
@@ -37,11 +52,19 @@ uninstall () {
   echo "rm -rf /var/log/thistle"
   rm -rf /var/log/thistle
 
-  echo "rm -f /etc/init.d/thistle"
-  rm -f /etc/init.d/thistle
-
-  echo "update-rc.d thistle remove"
-  update-rc.d thistle remove
+  if [ $CHKCONFIG -eq 1 ]; then
+    echo "chkconfig thistle off"
+    chkconfig thistle off
+    echo "chkconfig --del thistle"
+    chkconfig --del thistle
+    echo "rm -f /etc/init.d/thistle"
+    rm -f /etc/init.d/thistle
+  else
+    echo "rm -f /etc/init.d/thistle"
+    rm -f /etc/init.d/thistle
+    echo "update-rc.d thistle remove"
+    update-rc.d thistle remove
+  fi
 
 }
 
