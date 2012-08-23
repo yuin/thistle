@@ -45,6 +45,7 @@ import time
 import logging
 import sqlite3
 import contextlib
+from datetime import datetime
 
 from compat import *
 
@@ -148,9 +149,11 @@ class Monitor(threading.Thread): # {{{
 
   def run(self):
     while True:
+      started_at = time.time()
       self.monitor()
       try:
-        next_item = self.queue.get(timeout=self.config["interval"])
+        t = time.time() - started_at
+        next_item = self.queue.get(timeout=self.config["interval"] - t)
         if next_item is STOP_THREAD: 
           self.queue.task_done()
           break
@@ -194,6 +197,7 @@ class CommandOutputVarMonitor(Monitor): # {{{
   def default_config(self):
     config = Monitor.default_config(self)
     config["vars"] = []
+    config["logger"] = None
     config["messages"]["gt_e"] = "{name}: {__value__} (> {gt_e})."
     config["messages"]["lt_e"] = "{name}: {__value__} (< {lt_e})."
     config["messages"]["gt_w"] = "{name}: {__value__} (> {gt_w})."
@@ -208,6 +212,13 @@ class CommandOutputVarMonitor(Monitor): # {{{
       self.init_state(var)
       var["__value__"] = 0
 
+  def log_values(self, values):
+    buf = []
+    for varname in sorted(iter_keys(values)):
+      buf.append("{}:{}".format(varname, values[varname]))
+    log = "{} {}".format(datetime.now().strftime("%Y-%m-%d %H:%M:%S"), " ".join(buf))
+    self.config["logger"].info(log)
+
   def monitor(self):
     output = subprocess.check_output(self.config["command"], shell=(not isinstance(self.config["command"], (list, tuple)))).splitlines()
     values = {}
@@ -220,6 +231,8 @@ class CommandOutputVarMonitor(Monitor): # {{{
         if m:
           values[m.group(1)] = float(m.group(2))
 
+    if self.config["logger"]:
+      self.log_values(values)
 
     for var in self.config["vars"]:
       var["command"] = self.config["command"]

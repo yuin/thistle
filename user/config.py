@@ -15,6 +15,16 @@ def setup_logger():
   LOGGER.addHandler(trh)
 setup_logger()
 
+def command_logger(log_file):
+  import logging, logging.handlers
+  logger = logging.getLogger(log_file)
+  logger.setLevel(logging.INFO)
+  formatter = logging.Formatter("%(message)s")
+  trh = logging.handlers.TimedRotatingFileHandler(filename=log_file, when='W0', backupCount=10)
+  trh.setFormatter(formatter)
+  logger.addHandler(trh)
+  return logger
+
 def log_message(level, message, *args):
   LOGGER.log(level, message)
 
