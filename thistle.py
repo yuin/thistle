@@ -194,11 +194,11 @@ class CommandOutputVarMonitor(Monitor): # {{{
   def default_config(self):
     config = Monitor.default_config(self)
     config["vars"] = []
-    config["messages"]["gt_e"] = "{name}: {__value__:d} (> {gt_e:d})."
-    config["messages"]["lt_e"] = "{name}: {__value__:d} (< {lt_e:d})."
-    config["messages"]["gt_w"] = "{name}: {__value__:d} (> {gt_w:d})."
-    config["messages"]["lt_w"] = "{name}: {__value__:d} (< {lt_w:d})."
-    config["messages"]["ne"] = "{name}: {__value__:d} (!= {ne:d})"
+    config["messages"]["gt_e"] = "{name}: {__value__} (> {gt_e})."
+    config["messages"]["lt_e"] = "{name}: {__value__} (< {lt_e})."
+    config["messages"]["gt_w"] = "{name}: {__value__} (> {gt_w})."
+    config["messages"]["lt_w"] = "{name}: {__value__} (< {lt_w})."
+    config["messages"]["ne"] = "{name}: {__value__} (!= {ne})"
     config["messages"]["command_e"] = "{command} : invalid output. var {name} not found."
     config["messages"]["normal"] = "{name}: resume normal operation."
     return config
@@ -209,7 +209,7 @@ class CommandOutputVarMonitor(Monitor): # {{{
       var["__value__"] = 0
 
   def monitor(self):
-    output = subprocess.check_output(self.config["command"]).splitlines()
+    output = subprocess.check_output(self.config["command"], shell=(not isinstance(self.config["command"], (list, tuple)))).splitlines()
     values = {}
     for line in output:
       m = re.match("([^=]+)=([\-\+]?\d+)", line)
