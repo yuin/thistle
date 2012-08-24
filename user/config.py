@@ -20,7 +20,7 @@ def command_logger(log_file):
   logger = logging.getLogger(log_file)
   logger.setLevel(logging.INFO)
   formatter = logging.Formatter("%(message)s")
-  trh = logging.handlers.TimedRotatingFileHandler(filename=log_file, when='W0', backupCount=10)
+  trh = logging.handlers.TimedRotatingFileHandler(filename=log_file, when='midnight', backupCount=10)
   trh.setFormatter(formatter)
   logger.addHandler(trh)
   return logger
@@ -59,6 +59,7 @@ config = {
     }),
     (CommandOutputVarMonitor, {
       "interval": 10,
+      "logger": command_logger("/var/log/thistle/sysinfo.log"),
       "command" : [os.path.join(PATH, "plugins", "sysinfo.sh")],
       "vars": [
         {"name" : "CPU_USAGE",

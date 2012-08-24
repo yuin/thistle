@@ -58,6 +58,11 @@ PATH = os.path.dirname(FILE_PATH)
 LOGGER = logging.getLogger("thistle")
 KERNEL = None
 
+def with_defaults(default, values):
+  options = default.copy()
+  options.update(values)
+  return options
+
 def level_string(level):
   if level == Monitor.EVENT_ERROR:
     return "ERROR"
