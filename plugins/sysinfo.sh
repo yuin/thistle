@@ -22,6 +22,10 @@ MEM_USAGE=`echo ${USED_MEM} ${TOTAL_MEM} | awk '{ print int($1 / $2 * 100) }'`
 TOTAL_SWAP=`echo "${FREE}" | grep Swap | awk '{print $2}'`
 USED_SWAP=`echo "${FREE}" | grep Swap | awk '{print $3}'`
 SWAP_USAGE=`echo ${USED_SWAP} ${TOTAL_SWAP} | awk '{ print int($1 / $2 * 100) }'`
+if [ ${TOTAL_SWAP} -eq 0 ]; then
+  SWAP_USAGE=0
+fi
+
 
 TOP=`top -b -n1`
 CPU_USAGE=`echo "${TOP}" | grep '^Cpu' | sed -e s/%us,// | awk '{print int($2)}'`
