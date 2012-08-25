@@ -222,7 +222,7 @@ class CommandOutputVarMonitor(Monitor): # {{{
     for varname in sorted(iter_keys(values)):
       buf.append("{}:{}".format(varname, values[varname]))
     log = "{} {}".format(datetime.now().strftime("%Y-%m-%d %H:%M:%S"), " ".join(buf))
-    self.config["logger"].info(log)
+    self.config["logger"](log)
 
   def monitor(self):
     output = subprocess.check_output(self.config["command"], shell=(not isinstance(self.config["command"], (list, tuple)))).splitlines()

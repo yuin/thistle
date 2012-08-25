@@ -23,7 +23,7 @@ def command_logger(log_file):
   trh = logging.handlers.TimedRotatingFileHandler(filename=log_file, when='midnight', backupCount=10)
   trh.setFormatter(formatter)
   logger.addHandler(trh)
-  return logger
+  return logger.info
 
 def log_message(level, message, *args):
   LOGGER.log(level, message)
