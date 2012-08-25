@@ -46,9 +46,12 @@ for LINE in "${DF_LINES[@]}"; do
   if [ $i -eq 0 ]; then
     i=`expr $i + 1`
   else
-    DISK_USAGE=`echo "${LINE}" | sed -e s/%// | awk '{print $5}'`
-    MOUNT_NAME=`echo "${LINE}" | awk '{print $6}'`
-    echo "DISK_USAGE_${MOUNT_NAME}=${DISK_USAGE}"
+    FILE_SYSTEM=`echo "${LINE}" | awk '{print $1}'`
+    if [ "${FILE_SYSTEM}" != "none" ]; then
+      DISK_USAGE=`echo "${LINE}" | sed -e s/%// | awk '{print $5}'`
+      MOUNT_NAME=`echo "${LINE}" | awk '{print $6}'`
+      echo "DISK_USAGE_${MOUNT_NAME}=${DISK_USAGE}"
+    fi
   fi
 done
 
