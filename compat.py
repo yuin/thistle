@@ -1,7 +1,7 @@
 #vim: fileencoding=utf8
 """Python 2 and 3 compatibility stuff."""
 
-import sys, os, types, itertools, functools
+import sys, os, types, itertools
 version_error = False
 if sys.version_info < (3,0,0):
   PY3 = False
@@ -24,7 +24,6 @@ if PY3:
   imap    = map
   ifilter = filter
   izip    = zip
-  reduce  = functools.reduce
 
   raw_input = input
   callable = lambda v: hasattr(v, "__call__")
@@ -57,9 +56,9 @@ if PY3:
   #from urllib.parse import urlparse, urljoin, parse_qsl, SplitResult as UrlSplitResult
   #from urllib.parse import urlencode, quote as urlquote, unquote as urlunquote
   #from http.cookies import SimpleCookie
+  #import pickle
+  #from io import BytesIO
   import queue
-  import pickle
-  from io import BytesIO
 
 else:
   bytes = str
@@ -107,15 +106,15 @@ def reraise(e, v, t):
   #from urlparse import urlparse, urljoin, parse_qsl, SplitResult as UrlSplitResult
   #from urllib import urlencode, quote as urlquote, unquote as urlunquote
   #from Cookie import SimpleCookie
+  #try:
+  #  import cPickle as pickle
+  #except ImportError:
+  #  import pickle
+  #try:
+  #  from cStringIO import StringIO as BytesIO
+  #except ImportError:
+  #  from StringIO import StringIO as BytesIO
   import Queue as queue
-  try:
-    import cPickle as pickle
-  except ImportError:
-    import pickle
-  try:
-    from cStringIO import StringIO as BytesIO
-  except ImportError:
-    from StringIO import StringIO as BytesIO
 
 def b_(s, encoding='utf8'):
   if isinstance(s, unicode):

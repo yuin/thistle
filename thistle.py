@@ -37,14 +37,12 @@ import os
 import os.path
 import sys
 import re
-import codecs
 import subprocess
 import threading
 import signal
 import time
 import logging
 import sqlite3
-import contextlib
 from datetime import datetime
 
 from compat import *
