@@ -47,6 +47,7 @@ Monitor.DEFAULT_CONFIG.update({
 
 config = {
   "pid_file": "/var/run/thistle.pid",
+  "waiting_time_on_boot": 60,
   "monitors": [
     (ProcessMonitor, {
       "interval": 10,

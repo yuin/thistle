@@ -153,6 +153,7 @@ class Monitor(threading.Thread): # {{{
     self.queue.put(STOP_THREAD)
 
   def run(self):
+    time.sleep(KERNEL.config["waiting_time_on_boot"])
     while True:
       started_at = time.time()
       self.monitor()
