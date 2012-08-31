@@ -509,7 +509,7 @@ if __name__ == "__main__": # {{{
   parser.add_argument('-c', dest="config",
                       help="configuration file path", required=True)
   parser.add_argument('command', choices=["start", "stop", "test"])
-  args = parser.parse_args(args or sys.argv)
+  args = parser.parse_args()
   sys.path.insert(0, os.path.join(os.path.dirname(args.config)))
   sys.modules["thistle"] = sys.modules["__main__"]
   import plugins
