@@ -55,30 +55,51 @@ if os.path.islink(FILE_PATH):
 PATH = os.path.dirname(FILE_PATH)
 LOGGER = logging.getLogger("thistle")
 KERNEL = None
-
-def with_defaults(default, values):
-  options = default.copy()
+def with_defaults(default, values, copy=True):
+  options = copy and default.copy() or default
   options.update(values)
   return options
 
-def level_string(level):
-  if level == Monitor.EVENT_ERROR:
-    return "ERROR"
-  elif level == Monitor.EVENT_WARN:
-    return "WARN"
-  elif level == Monitor.EVENT_INFO:
-    return "INFO"
-  else:
-    return "UNKNOWN"
+def p_out(cmd):
+  return subprocess.check_output(cmd, shell=(not isinstance(cmd, (list, tuple))))
 # }}}
 
-class EventThread(threading.Thread): # {{{
+class Event(object): # {{{
+  CRIT = logging.CRITICAL
+  ERROR = logging.ERROR
+  WARN  = logging.WARNING
+  INFO  = logging.INFO
+  logging.addLevelName(WARN, "WARN")
+  logging.addLevelName(CRIT, "CRIT")
+
+  @classmethod
+  def as_string(cls, level):
+    return logging.getLevelName(level)
+
+  @classmethod
+  def add_new_level(cls, name, value):
+    setattr(cls, name, value)
+    logging.addLevelName(value, name)
+
+  @classmethod
+  def define_levels(cls, levels):
+    for key, value in iter_items(levels):
+      cls.add_new_level(key, value)
+# }}}
+
+class BaseThread(threading.Thread): # {{{
   def __init__(self):
     threading.Thread.__init__(self)
     self.queue = queue.Queue()
 
   def stop(self):
     self.queue.put(STOP_THREAD)
+    self.queue.join()
+# }}}
+
+class EventThread(BaseThread): # {{{
+  def execute(self, obj, args):
+    self.queue.put((obj, args))
 
   def run(self):
     while True:
@@ -97,182 +118,22 @@ class EventThread(threading.Thread): # {{{
         pass
 # }}}
 
-class Monitor(threading.Thread): # {{{
-  EVENT_ERROR = logging.ERROR
-  EVENT_WARN  = logging.WARNING
-  EVENT_INFO  = logging.INFO
-  DEFAULT_CONFIG = {
-      "interval": 300,
-      "messages": {},
-      "callback": {
-        EVENT_ERROR : [],
-        EVENT_WARN  : [],
-        EVENT_INFO  : []
-      }
-  }
-
-  def __init__(self, configs):
-    threading.Thread.__init__(self)
-
-    self.config = self.default_config()
-    for k,v in iter_items(configs):
-      self.config[k] = v
-    self.init_config()
-    self.queue = queue.Queue()
-
-  def default_config(self):
-    return Monitor.DEFAULT_CONFIG.copy()
-
-  def init_config(self): raise NotImplementedError()
-
-  def change_state(self, dct, state, callback_args, check_state = True):
-    pre_state = dct["__state__"]
-    if pre_state == state and check_state:
-      return
-    dct["__state__"] = state
-    message = "["+self.__class__.__name__ + "] " + self.config["messages"][state].format(**dct)
-    callback_args.insert(1, message)
-    self.callback(*callback_args)
-
-  def init_state(self, dct, value="normal"):
-    dct["__state__"] = value
-
-  def _callback(self, *args):
-    event_type = args[0]
-    for callback in self.config["callback"][event_type]:
-      callback(*args)
-
-  def callback(self, *args):
-    KERNEL.event_thread.queue.put((self, args))
-
-  def monitor(self): raise NotImplementedError()
-
-  def stop(self):
-    self.queue.put(STOP_THREAD)
-
-  def run(self):
-    time.sleep(KERNEL.config["waiting_time_on_boot"])
-    while True:
-      started_at = time.time()
-      self.monitor()
-      try:
-        t = time.time() - started_at
-        next_item = self.queue.get(timeout=self.config["interval"] - t)
-        if next_item is STOP_THREAD: 
-          self.queue.task_done()
-          break
-        self.queue.task_done()
-      except queue.Empty:
-        pass
-
-# }}}
-
-class ProcessMonitor(Monitor): # {{{
-  def default_config(self):
-    config = Monitor.default_config(self)
-    config["targets"] = []
-    config["messages"]["min"] = "{name}: {__count__:d} process(< {min:d})."
-    config["messages"]["max"] = "{name}: {__count__:d} process(> {max:d})."
-    config["messages"]["normal"] = "{name}: resume normal operation."
-    return config
-
-  def init_config(self):
-    for target in self.config["targets"]:
-      target["__pattern__"] = re.compile(target["pattern"])
-      target["__count__"] = 0
-      self.init_state(target)
-
-  def monitor(self):
-    processes = subprocess.check_output(["ps", "-ef"]).splitlines()
-    for target in self.config["targets"]:
-      target["__count__"] = 0
-      for process in processes:
-        if target["__pattern__"].search(process):
-          target["__count__"] += 1
-      if target["__count__"] < target["min"]:
-        self.change_state(target, "min", [Monitor.EVENT_ERROR, target])
-      elif target["__count__"] > target["max"]:
-        self.change_state(target, "max", [Monitor.EVENT_ERROR, target])
-      else:
-        self.change_state(target, "normal", [Monitor.EVENT_INFO, target])
-# }}}
-
-class CommandOutputVarMonitor(Monitor): # {{{
-  def default_config(self):
-    config = Monitor.default_config(self)
-    config["vars"] = []
-    config["logger"] = None
-    config["messages"]["gt_e"] = "{name}: {__value__} (> {gt_e})."
-    config["messages"]["lt_e"] = "{name}: {__value__} (< {lt_e})."
-    config["messages"]["gt_w"] = "{name}: {__value__} (> {gt_w})."
-    config["messages"]["lt_w"] = "{name}: {__value__} (< {lt_w})."
-    config["messages"]["ne"] = "{name}: {__value__} (!= {ne})"
-    config["messages"]["command_e"] = "{command} : invalid output. var {name} not found."
-    config["messages"]["normal"] = "{name}: resume normal operation."
-    return config
-
-  def init_config(self):
-    for var in self.config["vars"]:
-      self.init_state(var)
-      var["__value__"] = 0
-
-  def log_values(self, values):
-    buf = []
-    for varname in sorted(iter_keys(values)):
-      buf.append("{}:{}".format(varname, values[varname]))
-    log = "{} {}".format(datetime.now().strftime("%Y-%m-%d %H:%M:%S"), " ".join(buf))
-    self.config["logger"](log)
-
-  def monitor(self):
-    output = subprocess.check_output(self.config["command"], shell=(not isinstance(self.config["command"], (list, tuple)))).splitlines()
-    values = {}
-    for line in output:
-      m = re.match("([^=]+)=([\-\+]?\d+\.\d+)", line)
-      if m:
-        values[m.group(1)] = float(m.group(2))
-      else:
-        m = re.match("([^=]+)=([\-\+]?\d+)", line)
-        if m:
-          values[m.group(1)] = int(m.group(2))
-
-    if self.config["logger"]:
-      self.log_values(values)
-
-    for var in self.config["vars"]:
-      var["command"] = self.config["command"]
-      if var["name"] not in values:
-        self.change_state(var, "command_e", [Monitor.EVENT_ERROR, var])
-        continue
-      value = values[var["name"]]
-      var["__value__"] = value
-
-      if "lt_e" in var and value < var["lt_e"]:
-        self.change_state(var, "lt_e", [Monitor.EVENT_ERROR, var])
-      elif "gt_e" in var and value > var["gt_e"]:
-        self.change_state(var, "gt_e", [Monitor.EVENT_ERROR, var])
-      elif "lt_w" in var and value < var["lt_w"]:
-        self.change_state(var, "lt_w", [Monitor.EVENT_WARN, var])
-      elif "gt_w" in var and value > var["gt_w"]:
-        self.change_state(var, "gt_w", [Monitor.EVENT_WARN, var])
-      elif "ne" in var and value != var["ne"]:
-        self.change_state(var, "ne", [Monitor.EVENT_ERROR, var])
-      else:
-        self.change_state(var, "normal", [Monitor.EVENT_INFO, var])
-
-
-# }}}
-
-class DBThread(threading.Thread): # {{{
+class DBThread(BaseThread): # {{{
   db_file = os.path.join(PATH, "dat", "thistle.db")
-  def __init__(self, *args, **kw):
-    threading.Thread.__init__(self)
-    self.queue = queue.Queue()
 
-  def stop(self):
-    self.queue.put(STOP_THREAD)
-
-  def with_conn(self, f):
-    self.queue.put(f)
+  def execute(self, f, sync=True):
+    func = f
+    if sync:
+      q = queue.Queue()
+      def func(conn):
+        result = None
+        try:
+          result = f(conn)
+        finally:
+          q.put(result)
+    self.queue.put(func)
+    if sync:
+      return q.get()
     
   def run(self):
     LOGGER.info("DB file: {}.".format(self.__class__.db_file))
@@ -296,98 +157,277 @@ class DBThread(threading.Thread): # {{{
         self.queue.task_done()
       except queue.Empty:
         pass
+      except Exception as e:
+        LOGGER.error("Error in DBThread: {}".format(u_(e)))
+# }}}
+
+class Target(object): # {{{
+  __slots__ = ("monitor", "monitor_name", "attrs")
+
+  DEFAULT_ATTRS = {
+    "downtime": None,
+    "level":    Event.ERROR
+  }
+
+  def __init__(self, monitor, attrs):
+    self.monitor = monitor
+    self.monitor_name = self.monitor.__class__.__name__
+    self.attrs = with_defaults(Target.DEFAULT_ATTRS, attrs)
+    self["__state__"] = "normal"
+
+  def __getitem__(self, key): return self.attrs.get(key)
+  def __setitem__(self, key, value): self.attrs[key] = value
+  def __contains__(self, key): return key in self.attrs
+  def get(self, key, default=None): return self.attrs.get(key, default)
+
+  def downtime(self):
+    downtime = self["downtime"]
+    if downtime is None:
+      return False
+    if callable(downtime):
+      return downtime()
+
+  def change_state(self, state, level, check_state = True):
+    if self.downtime():
+      return
+
+    pre_state = self["__state__"]
+    if pre_state == state and check_state:
+      return
+    self["__state__"] = state
+    message = "["+ self.monitor_name + "] " + self.monitor.attrs["messages"][state].format(**self.attrs)
+    self.monitor.callback(level, message, self)
+# }}}
+
+class Monitor(BaseThread): # {{{
+  DEFAULT_ATTRS = {
+      "interval": 300,
+      "messages": {},
+      "callback": {
+        Event.CRIT : [], Event.ERROR : [], Event.WARN  : [], Event.INFO  : []
+      }
+  }
+
+  def __init__(self, attrs):
+    BaseThread.__init__(self)
+    self.attrs = with_defaults(self.default_attrs(), attrs, copy=False)
+    self.init_attrs()
+
+  def default_attrs(self):
+    return Monitor.DEFAULT_ATTRS.copy()
+
+  def init_attrs(self):
+    self.attrs["targets"] = [Target(self, v) for v in self.attrs["targets"]]
+
+  def _callback(self, *args):
+    for callback in self.attrs["callback"][args[0]]:
+      callback(*args)
+
+  def callback(self, *args):
+    KERNEL.event_thread.execute(self, args)
+
+  def monitor(self): raise NotImplementedError()
+
+  def run(self):
+    time.sleep(KERNEL.attrs["waiting_time_on_boot"])
+    while True:
+      started_at = time.time()
+      try:
+        self.monitor()
+        t = time.time() - started_at
+        next_item = self.queue.get(timeout=self.attrs["interval"] - t)
+        if next_item is STOP_THREAD: 
+          self.queue.task_done()
+          break
+        self.queue.task_done()
+      except queue.Empty:
+        pass
+      except Exception as e:
+        LOGGER.error("Error in {}: {}".format(self.__class__.__name__, u_(e)))
+
+# }}}
+
+class ProcessMonitor(Monitor): # {{{
+  def default_attrs(self):
+    attrs = Monitor.default_attrs(self)
+    attrs["messages"]["min"] = "{name}: {__count__:d} process(< {min:d})."
+    attrs["messages"]["max"] = "{name}: {__count__:d} process(> {max:d})."
+    attrs["messages"]["normal"] = "{name}: Resume normal operations."
+    return attrs
+
+  def init_attrs(self):
+    Monitor.init_attrs(self)
+    for target in self.attrs["targets"]:
+      target["__pattern__"] = re.compile(target["pattern"])
+      target["__count__"] = 0
+
+  def get_process_list(self):
+    return p_out(["ps", "-ef"]).splitlines()
+
+  def monitor(self):
+    processes = self.get_process_list()
+    for target in self.attrs["targets"]:
+      target["__count__"] = 0
+      for process in processes:
+        if target["__pattern__"].search(process):
+          target["__count__"] += 1
+      if target["__count__"] < target.get("min", -1):
+        target.change_state("min", target["level"])
+      elif target["__count__"] > target.get("max",99999):
+        target.change_state("max", target["level"])
+      else:
+        target.change_state("normal", Event.INFO)
+# }}}
+
+class CommandOutputVarMonitor(Monitor): # {{{
+  def default_attrs(self):
+    attrs = Monitor.default_attrs(self)
+    attrs["logger"] = None
+    attrs["messages"]["gt"] = "{name}: {__value__} (> {gt})."
+    attrs["messages"]["lt"] = "{name}: {__value__} (< {lt})."
+    attrs["messages"]["ne"] = "{name}: {__value__} (!= {ne})"
+    attrs["messages"]["command_e"] = "{__command__} : Invalid output. var {name} not found."
+    attrs["messages"]["normal"] = "{name}: Resume normal operations."
+    return attrs
+
+  def init_attrs(self):
+    Monitor.init_attrs(self)
+    for target in self.attrs["targets"]:
+      target["__value__"] = 0
+
+  def log_values(self, values):
+    buf = []
+    for varname in sorted(iter_keys(values)):
+      buf.append("{}:{}".format(varname, values[varname]))
+    log = "{} {}".format(datetime.now().strftime("%Y-%m-%d %H:%M:%S"), " ".join(buf))
+    self.attrs["logger"](log)
+
+  def get_values(self):
+    output = p_out(self.attrs["command"]).splitlines()
+    values = {}
+    for line in output:
+      m = re.match("([^=]+)=([\-\+]?\d+\.\d+)", line)
+      if m:
+        values[m.group(1)] = float(m.group(2))
+      else:
+        m = re.match("([^=]+)=([\-\+]?\d+)", line)
+        if m:
+          values[m.group(1)] = int(m.group(2))
+    return values
+
+  def monitor(self):
+    values = self.get_values()
+    if self.attrs["logger"]:
+      self.log_values(values)
+    for target in self.attrs["targets"]:
+      target["__command__"] = self.attrs["command"]
+      if target["name"] not in values:
+        target.change_state("command_e", Event.ERROR)
+        continue
+      value = values[target["name"]]
+      target["__value__"] = value
+
+      if "lt" in target and value < target["lt"]:
+        target.change_state("lt", target["level"])
+      elif "gt" in target and value > target["gt"]:
+        target.change_state("gt", target["level"])
+      elif "ne" in target and value != target["ne"]:
+        target.change_state("ne", target["level"])
+      else:
+        target.change_state("normal", Event.INFO)
 # }}}
 
 class LogMonitor(Monitor): # {{{
-  def __init__(self, *args, **kw):
-    Monitor.__init__(self, *args, **kw)
+  def __init__(self, attrs):
+    self.monitor_target = Target(self, attrs)
+    Monitor.__init__(self, attrs)
 
-  def default_config(self):
-    config = Monitor.default_config(self)
-    config["targets"] = []
-    config["messages"]["error"] = "{file}: {message}({__line__})"
-    config["messages"]["not_readable_error"] = "File {file} is not readable or not exists."
-    config["messages"]["truncated"] = "File {file} was truncated."
-    config["messages"]["warn"] = "{file}: {message}({__line__})"
-    config["messages"]["info"] = "{file}: {message}({__line__})"
-    return config
+  def default_attrs(self):
+    attrs = Monitor.default_attrs(self)
+    attrs["messages"]["not_readable_error"] = "File {file} is not readable or not exists."
+    attrs["messages"]["truncated"] = "File {file} was truncated."
+    attrs["messages"]["opened"] = "Open the file {file}(position: {__seek__})."
+    attrs["messages"]["error"] = "{__file__}: {message}({__line__})"
+    attrs["messages"]["warn"] = "{__file__}: {message}({__line__})"
+    attrs["messages"]["info"] = "{__file__}: {message}({__line__})"
+    return attrs
 
   def update_seek(self, pos):
     def f(conn):
       cur = conn.cursor()
       cur.execute("BEGIN")
-      cur.execute("update file_stat set seek = ? where file=?", (pos, self.config["file"]))
+      cur.execute("update file_stat set seek = ? where file=?", (pos, self.attrs["file"]))
       conn.commit()
-    KERNEL.db_thread.with_conn(f)
+    KERNEL.db_thread.execute(f, sync=False)
+
+  def close_file(self):
+    if self.monitor_target["__io__"] is not None:
+      self.monitor_target["__io__"].close()
+      self.monitor_target["__io__"] = None
 
   def stop(self):
     Monitor.stop(self)
-    if self.config["__io__"] is not None:
-      self.config["__io__"].close()
+    self.close_file()
 
-  def init_config(self):
-    self.init_state(self.config)
-    for target in self.config["targets"]:
-      self.init_state(target)
+  def init_attrs(self):
+    Monitor.init_attrs(self)
+    for target in self.attrs["targets"]:
       target["__pattern__"] = re.compile(target["pattern"])
-      target["file"] = self.config["file"]
-
-    if not os.access(self.config["file"], os.R_OK):
-      self.change_state(self.config, "not_readable_error", [Monitor.EVENT_ERROR, self.config])
-      self.config["__io__"] = None
-    else:
-      self.open_file()
+      target["__file__"] = self.attrs["file"]
+    self.open_file()
 
   def open_file(self):
-    if self.config.get("__io__"):
-      self.config["__io__"].close()
-    self.config["__io__"] = open(self.config["file"])
-    self.config["__size__"] = os.path.getsize(self.config["file"])
+    self.close_file()
+    try:
+      self.monitor_target["__io__"] = open(self.attrs["file"])
+      self.monitor_target["__size__"] = os.path.getsize(self.attrs["file"])
+    except:
+      self.monitor_target.change_state("not_readable_error", Event.ERROR)
+      return
 
-    flag = {"truncated": False}
     def f(conn):
       cur = conn.cursor()
-      cur.execute("select * from file_stat where file=?", (self.config["file"],))
-      row = list(cur.fetchone())
+      cur.execute("select * from file_stat where file=?", (self.attrs["file"],))
+      row = list(cur.fetchone() or [])
       if not row:
         cur.execute("BEGIN")
-        cur.execute("insert into file_stat values (?, ?)", (self.config["file"], 0))
+        cur.execute("insert into file_stat values (?, ?)", (self.attrs["file"], 0))
         conn.commit()
-        row = [self.config["file"], 0]
-      if self.config["__io__"]:
-        if self.config["__size__"] < row[1]:
-          self.change_state(self.config, "truncated", [Monitor.EVENT_INFO, self.config])
-          flag["truncated"] = True
-          self.config["__io__"].seek(0)
-          row = [self.config["file"], 0]
-        else:
-          self.config["__io__"].seek(row[1])
-      LOGGER.info("Open file: {} (seek: {}).".format(self.config["file"], row[1]))
-    KERNEL.db_thread.with_conn(f)
-    if flag["truncated"]:
-      self.update_seek(0)
+        row = [self.attrs["file"], 0]
+      return row
+    row = KERNEL.db_thread.execute(f)
+    if self.monitor_target["__io__"]:
+      if self.monitor_target["__size__"] < row[1]:
+        self.monitor_target.change_state("truncated", Event.INFO)
+        self.update_seek(0)
+        self.monitor_target["__io__"].seek(0)
+        row = [self.attrs["file"], 0]
+      else:
+        self.monitor_target["__io__"].seek(row[1])
+    self.monitor_target["__seek__"] = row[1]
+    self.monitor_target.change_state("opened", Event.INFO)
+    return self.monitor_target["__io__"]
 
   def monitor(self):
-    io = self.config["__io__"]
+    io = self.monitor_target["__io__"]
     if io is None:
-      if os.access(self.config["file"], os.R_OK):
-        self.open_file()
-        io = self.config["__io__"]
-      else:
+      io = self.open_file()
+      if io is None:
         return
     else:
       try:
-        new_size = os.path.getsize(self.config["file"])
+        new_size = os.path.getsize(self.attrs["file"])
       except:
-        self.change_state(self.config, "not_readable_error", [Monitor.EVENT_ERROR, self.config])
-        self.config["__io__"] = None
+        self.monitor_target.change_state("not_readable_error", Event.ERROR)
+        self.monitor_target["__io__"] = None
         return
         
       if new_size < io.tell():
-        self.change_state(self.config, "truncated", [Monitor.EVENT_INFO, self.config])
+        self.monitor_target.change_state("truncated", Event.INFO)
         self.update_seek(0)
-        self.open_file()
-        io = self.config["__io__"]
+        io = self.open_file()
+
+    if io is None: return
 
     while True:
       where = io.tell()
@@ -397,27 +437,27 @@ class LogMonitor(Monitor): # {{{
         io.seek(where)
         break
 
-      for target in self.config["targets"]:
+      for target in self.attrs["targets"]:
         if line:
           m = target["__pattern__"].match(line)
           if m:
             target["__line__"] = line.strip()
-            level = target.get("level", Monitor.EVENT_ERROR)
-            if level == Monitor.EVENT_ERROR:
-              self.change_state(target, "error", [level, target, m], check_state=False)
-            elif level == Monitor.EVENT_WARN:
-              self.change_state(target, "warn", [level, target, m], check_state=False)
-            else:
-              self.change_state(target, "info", [level, target, m], check_state=False)
+            target["__matchobj__"] = m
+            level = target.get("level", Event.ERROR)
+            target.change_state(Event.as_string(level).lower(), level, check_state=False)
       self.update_seek(io.tell())
 
 # }}}
 
 class Kernel(object): # {{{
-  def __init__(self, config):
-    self.config = config
+  def __init__(self, attrs):
+    self.attrs = attrs
 
   def signal_handler(self, sig, frame):
+    self.shutdown()
+    sys.exit(0)
+
+  def shutdown(self):
     LOGGER.info("==== Receive SIGINT signal......... ====")
     for monitor in self.monitors:
       LOGGER.info("Stopping a monitor: {}".format(monitor.__class__.__name__))
@@ -427,11 +467,10 @@ class Kernel(object): # {{{
     LOGGER.info("Stopping a db thread.")
     self.db_thread.stop()
     LOGGER.info("==== Shutting down thistle: success ====")
-    sys.exit(0)
 
-  def start(self):
+  def start(self, loop=True):
     LOGGER.info("==== Starting up thistle......... ====")
-    with open(self.config["pid_file"], "w") as io:
+    with open(self.attrs["pid_file"], "w") as io:
       io.write(u_(os.getpid()))
     signal.signal(signal.SIGINT, self.signal_handler)
 
@@ -443,24 +482,24 @@ class Kernel(object): # {{{
     self.event_thread.start()
 
     self.monitors = []
-    for monitor_spec in self.config["monitors"]:
+    for monitor_spec in self.attrs["monitors"]:
       monitor = monitor_spec[0](monitor_spec[1])
       self.monitors.append(monitor)
       LOGGER.info("Starting up monitor: {}".format(monitor.__class__.__name__))
       monitor.start()
 
     LOGGER.info("==== Starting up thistle: success ====")
-    while True:
+    while loop:
       try:
         time.sleep(60)
       except KeyboardInterrupt:
         self.stop()
 
   def stop(self):
-    with open(self.config["pid_file"]) as io:
+    with open(self.attrs["pid_file"]) as io:
       pid = int(io.read())
     os.kill(pid, signal.SIGINT)
-    os.remove(self.config["pid_file"])
+    os.remove(self.attrs["pid_file"])
 # }}}
 
 if __name__ == "__main__": # {{{
@@ -470,7 +509,7 @@ if __name__ == "__main__": # {{{
   parser.add_argument('-c', dest="config",
                       help="configuration file path", required=True)
   parser.add_argument('command', choices=["start", "stop", "test"])
-  args = parser.parse_args()
+  args = parser.parse_args(args or sys.argv)
   sys.path.insert(0, os.path.join(os.path.dirname(args.config)))
   sys.modules["thistle"] = sys.modules["__main__"]
   import plugins

@@ -16,12 +16,12 @@ class SmtpMailNotification(object):
     self.message_format = message_format
     self.subject = subject
 
-  def __call__(self, level, message, *args):
+  def __call__(self, level, message, target):
     message_format = self.message_format or """
     {message}
     """.strip()
-    msg = MIMEText(message.format(level=level, message=message))
-    subject = self.subject or "[{}] Notification from thistle({})".format(thistle.level_string(level), socket.gethostname())
+    msg = MIMEText(message_format.format(level=level, message=message))
+    subject = self.subject or "[{}] Notification from thistle({})".format(thistle.Event.as_string(level), socket.gethostname())
     msg['Subject'] = subject
     msg['From'] = self.from_addr
     msg['To'] = self.to_addr

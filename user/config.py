@@ -25,7 +25,7 @@ def command_logger(log_file):
   logger.addHandler(trh)
   return logger.info
 
-def log_message(level, message, *args):
+def log_message(level, message, target):
   LOGGER.log(level, message)
 
 email_notification = thistle.plugins.mailnotification.SmtpMailNotification(
@@ -37,20 +37,24 @@ email_notification = thistle.plugins.mailnotification.SmtpMailNotification(
   to_addr="to_addr"
 )
 
-Monitor.DEFAULT_CONFIG.update({
+Monitor.DEFAULT_ATTRS.update({
   "callback": {
-    Monitor.EVENT_ERROR: [log_message, email_notification],
-    Monitor.EVENT_WARN:  [log_message],
-    Monitor.EVENT_INFO:  [log_message]
+    Event.ERROR: [log_message, email_notification],
+    Event.WARN:  [log_message],
+    Event.INFO:  [log_message]
   }
+})
+
+Event.define_levels({
+  "MAJOR": Event.ERROR+1
 })
 
 config = {
   "pid_file": "/var/run/thistle.pid",
-  "waiting_time_on_boot": 60,
+  "waiting_time_on_boot": 5,
   "monitors": [
     (ProcessMonitor, {
-      "interval": 10,
+      "interval": 300,
       "targets": [
         {"name": "sleep process",
          "pattern": ".*sleep.*",
@@ -59,44 +63,42 @@ config = {
       ]
     }),
     (CommandOutputVarMonitor, {
-      "interval": 10,
+      "interval": 300,
       "logger": command_logger("/var/log/thistle/sysinfo.log"),
       "command" : [os.path.join(PATH, "plugins", "sysinfo.sh")],
-      "vars": [
+      "targets": [
         {"name" : "CPU_USAGE",
-         "gt_e" : 95,
-         "gt_w" : 85
-        },
+         "gt" : 95 },
+        {"name" : "CPU_USAGE",
+         "gt" : 85 
+         "level": Event.WARN},
         {"name" : "MEM_USAGE",
-         "gt_e" : 95,
-         "gt_w" : 85
-        },
-        {"name" : "DISK_USAGE_/",
-         "gt_e" : 95,
-         "gt_w" : 85
-        },
+         "gt" : 90 },
+        {"name" : "MEM_USAGE",
+         "gt" : 80 
+         "level": Event.WARN},
       ]
     }),
     (LogMonitor, {
-      "interval": 10,
+      "interval": 300,
       "file": "/home/foo/test.log",
       "targets": [
         {"pattern": ".*error.*",
          "message": "error has occurred."},
         {"pattern": ".*warn.*",
          "message": "warn has occurred.",
-         "level": Monitor.EVENT_WARN}
+         "level": Event.WARN}
       ]
     }),
     (LogMonitor, {
-      "interval": 10,
+      "interval": 300,
       "file": "/home/foo/test1.log",
       "targets": [
         {"pattern": ".*hoge.*",
          "message": "hoge has occurred."},
         {"pattern": ".*warn.*",
          "message": "foo has occurred.",
-         "level": Monitor.EVENT_WARN}
+         "level": Event.WARN}
       ]
     })
   ]
