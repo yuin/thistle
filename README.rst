@@ -41,7 +41,7 @@ ProcessMonitor
     monitors processes whether the number of processes is outside the required threshold ranges.
 
 CommandOutputVarMonitor
-    runs a given command and monitors its output whether value is output the required ranges.
+    runs a given command and monitors its output whether value is outside the required ranges.
 
 LogMonitor
     checks a given log file to match regular expressions.
@@ -89,31 +89,30 @@ CommandOutputVarMonitor
     (CommandOutputVarMonitor, {
       "interval": 10,
       "command" : [os.path.join(PATH, "plugins", "sysinfo.sh")],
+      "logger"  : sys.stdout.write,
       "vars": [
         {"name" : "CPU_USAGE",
-         "gt_e" : 95,
-         "gt_w" : 85
-        },
+         "gt" : 95 },
+        {"name" : "CPU_USAGE",
+         "gt" : 85 
+         "level": Event.WARN},
         {"name" : "MEM_USAGE",
-         "gt_e" : 95,
-         "gt_w" : 85
-        },
-        {"name" : "DISK_USAGE_/",
-         "gt_e" : 95,
-         "gt_w" : 85
-        },
+         "gt" : 90 },
+        {"name" : "MEM_USAGE",
+         "gt" : 80 
+         "level": Event.WARN},
       ]
     })
 
 :interval: Monitoring interval(secs).
 :command:  Command to get informations.
+:logger:   Python function that write command output to the files. This function takes one string arugment.
 :vars:     List of variable definitions.
 :name:     Variable name.
-:gt_e:     Maximum threshold for the variable value.(ERROR)
-:gt_w:     Maximum threshold for the variable value.(WARN)
-:lt_e:     Minimum threshold for the variable value.(ERROR)
-:lt_w:     Minimum threshold for the variable value.(WARN)
-:ne:       A value that the variable should have same value.(ERROR)
+:gt:       Maximum threshold for the variable value.
+:lt:       Minimum threshold for the variable value.
+:ne:       A value that the variable should have same value.
+:level:    An event level.(default `Event.ERROR`)
 
 
 LogMonitor
@@ -128,7 +127,7 @@ LogMonitor
       "targets": [
         {"pattern": ".*warn.*",
          "message": "foo has occurred.",
-         "level": Monitor.EVENT_WARN}
+         "level": Event.WARN}
       ]
     })
 
@@ -137,6 +136,6 @@ LogMonitor
 :targets:  List of line patterns.
 :patterns: Regular expressions to match line.
 :message:  A message if a line matches the regular expressions.
-:level:    An event level.(default `Monitor.EVENT_ERROR`)
+:level:    An event level.(default `Event.ERROR`)
 
 
