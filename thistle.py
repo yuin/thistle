@@ -358,7 +358,7 @@ class LogMonitor(Monitor): # {{{
     def f(conn):
       cur = conn.cursor()
       cur.execute("BEGIN")
-      cur.execute("update file_stat set seek = ?, header = ? where file=?", (pos, self.attrs["file"], self.monitor_target["__header__"]))
+      cur.execute("update file_stat set seek = ?, header = ? where file=?", (pos, self.monitor_target["__header__"], self.attrs["file"]))
       conn.commit()
     KERNEL.db_thread.execute(f, sync=False)
 
@@ -395,9 +395,9 @@ class LogMonitor(Monitor): # {{{
       row = list(cur.fetchone() or [])
       if not row:
         cur.execute("BEGIN")
-        cur.execute("insert into file_stat values (?, ?, ?)", (self.attrs["file"], 0, u_("")))
+        cur.execute("insert into file_stat values (?, ?, ?)", (self.attrs["file"], 0, self.monitor_target["__header__"]))
         conn.commit()
-        row = [self.attrs["file"], 0, u_("")]
+        row = [self.attrs["file"], 0, self.monitor_target["__header__"]]
       return row
     row = KERNEL.db_thread.execute(f)
     if self.monitor_target["__io__"]:
