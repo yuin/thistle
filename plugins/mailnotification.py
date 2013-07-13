@@ -1,9 +1,11 @@
 #vim: fileencoding=utf8
 import smtplib
 from email.MIMEText import MIMEText
+from email.Header   import Header
 from email.Utils import formatdate
 import socket
 import thistle
+from thistle import u_
 
 class SmtpMailNotification(object):
   def __init__(self, host, port, user, password, from_addr, to_addr, message_format = None, subject = None):
@@ -17,12 +19,12 @@ class SmtpMailNotification(object):
     self.subject = subject
 
   def __call__(self, level, message, target):
-    message_format = self.message_format or """
+    message_format = self.message_format or u_("""
     {message}
-    """.strip()
-    msg = MIMEText(message_format.format(level=level, message=message))
-    subject = self.subject or "[{}] Notification from thistle({})".format(thistle.Event.as_string(level), socket.gethostname())
-    msg['Subject'] = subject
+    """).strip()
+    msg = MIMEText(u_(message_format.format(level=level, message=message)).encode("utf8"), "plain", "utf8")
+    subject = self.subject or u_("[{}] Notification from thistle({})").format(thistle.Event.as_string(level), socket.gethostname())
+    msg['Subject'] = Header(u_(subject), "utf8")
     msg['From'] = self.from_addr
     msg['To'] = self.to_addr
     msg['Date'] = formatdate()

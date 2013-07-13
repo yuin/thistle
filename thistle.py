@@ -112,7 +112,9 @@ class EventThread(BaseThread): # {{{
         try:
           next_item[0]._callback(*next_item[1])
         except Exception as e:
+          import traceback
           LOGGER.error("Failed to execute a callback: {}".format(u_(e)))
+          traceback.print_exc()
 
         self.queue.task_done()
       except queue.Empty:
@@ -196,7 +198,7 @@ class Target(object): # {{{
     if pre_state == state and check_state:
       return
     self["__state__"] = state
-    message = "["+ self.monitor_name + "] " + self.monitor.attrs["messages"][state].format(**self.attrs)
+    message = u_("[")+ u_(self.monitor_name) + u_("] ") + u_(self.monitor.attrs["messages"][state]).format(**self.attrs)
     self.monitor.callback(level, message, self)
 # }}}
 
@@ -244,6 +246,8 @@ class Monitor(BaseThread): # {{{
       except queue.Empty:
         pass
       except Exception as e:
+        import traceback
+        traceback.print_exc()
         LOGGER.error("Error in {}: {}".format(self.__class__.__name__, u_(e)))
 
 # }}}
