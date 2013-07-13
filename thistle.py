@@ -395,9 +395,9 @@ class LogMonitor(Monitor): # {{{
       row = list(cur.fetchone() or [])
       if not row:
         cur.execute("BEGIN")
-        cur.execute("insert into file_stat values (?, ?, ?)", (self.attrs["file"], 0, ""))
+        cur.execute("insert into file_stat values (?, ?, ?)", (self.attrs["file"], 0, u_("")))
         conn.commit()
-        row = [self.attrs["file"], 0]
+        row = [self.attrs["file"], 0, u_("")]
       return row
     row = KERNEL.db_thread.execute(f)
     if self.monitor_target["__io__"]:
@@ -490,23 +490,28 @@ class Kernel(object): # {{{
 
   def start(self, loop=True):
     LOGGER.info("==== Starting up thistle......... ====")
-    with open(self.attrs["pid_file"], "w") as io:
-      io.write(u_(os.getpid()))
-    signal.signal(signal.SIGINT, self.signal_handler)
+    try:
+      with open(self.attrs["pid_file"], "w") as io:
+        io.write(u_(os.getpid()))
+      signal.signal(signal.SIGINT, self.signal_handler)
 
-    self.db_thread = DBThread()
-    LOGGER.info("Starting up a db thread.")
-    self.db_thread.start()
-    self.event_thread = EventThread()
-    LOGGER.info("Starting up an event thread.")
-    self.event_thread.start()
+      self.db_thread = DBThread()
+      LOGGER.info("Starting up a db thread.")
+      self.db_thread.start()
+      self.event_thread = EventThread()
+      LOGGER.info("Starting up an event thread.")
+      self.event_thread.start()
 
-    self.monitors = []
-    for monitor_spec in self.attrs["monitors"]:
-      monitor = monitor_spec[0](monitor_spec[1])
-      self.monitors.append(monitor)
-      LOGGER.info("Starting up monitor: {}".format(monitor.__class__.__name__))
-      monitor.start()
+      self.monitors = []
+      for monitor_spec in self.attrs["monitors"]:
+        monitor = monitor_spec[0](monitor_spec[1])
+        self.monitors.append(monitor)
+        LOGGER.info("Starting up monitor: {}".format(monitor.__class__.__name__))
+        monitor.start()
+    except Exception as e:
+      LOGGER.info("==== Starting up thistle: failed ====")
+      LOGGER.error(e)
+      sys.exit(1)
 
     LOGGER.info("==== Starting up thistle: success ====")
     while loop:
