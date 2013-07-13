@@ -43,6 +43,7 @@ import signal
 import time
 import logging
 import sqlite3
+import codecs
 from datetime import datetime
 
 from compat import *
@@ -141,7 +142,7 @@ class DBThread(BaseThread): # {{{
       LOGGER.info("Create new db: {}.".format(self.__class__.db_file))
       conn = sqlite3.connect(self.__class__.db_file)
       cur = conn.cursor()
-      cur.execute('''create table file_stat (file text, seek int)''')
+      cur.execute('''create table file_stat (file text, seek int, header text)''')
       conn.commit()
       conn.close()
     self.conn = sqlite3.connect(self.__class__.db_file)
@@ -346,6 +347,7 @@ class LogMonitor(Monitor): # {{{
     attrs = Monitor.default_attrs(self)
     attrs["messages"]["not_readable_error"] = "File {file} is not readable or not exists."
     attrs["messages"]["truncated"] = "File {file} was truncated."
+    attrs["messages"]["rewritten"] = "File {file} was rewritten."
     attrs["messages"]["opened"] = "Open the file {file}(position: {__seek__})."
     attrs["messages"]["error"] = "{__file__}: {message}({__line__})"
     attrs["messages"]["warn"] = "{__file__}: {message}({__line__})"
@@ -356,7 +358,7 @@ class LogMonitor(Monitor): # {{{
     def f(conn):
       cur = conn.cursor()
       cur.execute("BEGIN")
-      cur.execute("update file_stat set seek = ? where file=?", (pos, self.attrs["file"]))
+      cur.execute("update file_stat set seek = ?, header = ? where file=?", (pos, self.attrs["file"], self.monitor_target["__header__"]))
       conn.commit()
     KERNEL.db_thread.execute(f, sync=False)
 
@@ -379,8 +381,10 @@ class LogMonitor(Monitor): # {{{
   def open_file(self):
     self.close_file()
     try:
-      self.monitor_target["__io__"] = open(self.attrs["file"])
+      self.monitor_target["__io__"] = codecs.open(self.attrs["file"], encoding=self.attrs.get("encoding", "utf8"))
       self.monitor_target["__size__"] = os.path.getsize(self.attrs["file"])
+      self.monitor_target["__header__"] = self.monitor_target["__io__"].read(512)
+      self.monitor_target["__io__"].seek(0)
     except:
       self.monitor_target.change_state("not_readable_error", Event.ERROR)
       return
@@ -391,7 +395,7 @@ class LogMonitor(Monitor): # {{{
       row = list(cur.fetchone() or [])
       if not row:
         cur.execute("BEGIN")
-        cur.execute("insert into file_stat values (?, ?)", (self.attrs["file"], 0))
+        cur.execute("insert into file_stat values (?, ?, ?)", (self.attrs["file"], 0, ""))
         conn.commit()
         row = [self.attrs["file"], 0]
       return row
@@ -399,9 +403,14 @@ class LogMonitor(Monitor): # {{{
     if self.monitor_target["__io__"]:
       if self.monitor_target["__size__"] < row[1]:
         self.monitor_target.change_state("truncated", Event.INFO)
-        self.update_seek(0)
         self.monitor_target["__io__"].seek(0)
+        self.update_seek(0)
         row = [self.attrs["file"], 0]
+      elif self.monitor_target["__header__"] != row[2]:
+        self.monitor_target.change_state("rewritten", Event.INFO)
+        self.monitor_target["__io__"].seek(0)
+        self.update_seek(0)
+        row = [self.attrs["file"], 0, self.monitor_target["__header__"]]
       else:
         self.monitor_target["__io__"].seek(row[1])
     self.monitor_target["__seek__"] = row[1]
@@ -424,8 +433,19 @@ class LogMonitor(Monitor): # {{{
         
       if new_size < io.tell():
         self.monitor_target.change_state("truncated", Event.INFO)
-        self.update_seek(0)
         io = self.open_file()
+        self.update_seek(0)
+      else:
+        where = io.tell()
+        io.seek(0)
+        if self.monitor_target["__header__"] != io.read(512):
+          self.monitor_target.change_state("rewritten", Event.INFO)
+          io = self.open_file()
+          self.update_seek(0)
+        else:
+          io.seek(where)
+
+
 
     if io is None: return
 

@@ -124,6 +124,7 @@ LogMonitor
     (LogMonitor, {
       "interval": 10,
       "file": "/home/foo/test1.log",
+      "encoding": "utf8",
       "targets": [
         {"pattern": ".*warn.*",
          "message": "foo has occurred.",
@@ -133,6 +134,7 @@ LogMonitor
 
 :interval: Monitoring interval(secs).
 :file:     A file to monitor.
+:encoding: A file character encoding.
 :targets:  List of line patterns.
 :patterns: Regular expressions to match line.
 :message:  A message if a line matches the regular expressions.

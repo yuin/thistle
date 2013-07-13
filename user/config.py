@@ -70,18 +70,19 @@ config = {
         {"name" : "CPU_USAGE",
          "gt" : 95 },
         {"name" : "CPU_USAGE",
-         "gt" : 85 
+         "gt" : 85 ,
          "level": Event.WARN},
         {"name" : "MEM_USAGE",
          "gt" : 90 },
         {"name" : "MEM_USAGE",
-         "gt" : 80 
+         "gt" : 80 ,
          "level": Event.WARN},
       ]
     }),
     (LogMonitor, {
       "interval": 300,
       "file": "/home/foo/test.log",
+      "encoding": "utf8",
       "targets": [
         {"pattern": ".*error.*",
          "message": "error has occurred."},
@@ -93,6 +94,7 @@ config = {
     (LogMonitor, {
       "interval": 300,
       "file": "/home/foo/test1.log",
+      "encoding": "utf8",
       "targets": [
         {"pattern": ".*hoge.*",
          "message": "hoge has occurred."},
