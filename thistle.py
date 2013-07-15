@@ -387,7 +387,7 @@ class LogMonitor(Monitor): # {{{
     try:
       self.monitor_target["__io__"] = codecs.open(self.attrs["file"], encoding=self.attrs.get("encoding", "utf8"))
       self.monitor_target["__size__"] = os.path.getsize(self.attrs["file"])
-      self.monitor_target["__header__"] = self.monitor_target["__io__"].read(512)
+      self.monitor_target["__header__"] = self.monitor_target["__io__"].readline().strip()
       self.monitor_target["__io__"].seek(0)
     except:
       self.monitor_target.change_state("not_readable_error", Event.ERROR)
@@ -442,14 +442,13 @@ class LogMonitor(Monitor): # {{{
       else:
         where = io.tell()
         io.seek(0)
-        if self.monitor_target["__header__"] != io.read(512):
-          self.monitor_target.change_state("rewritten", Event.INFO)
+        if self.monitor_target["__header__"] != io.readline().strip():
+          if where != 0: 
+            self.monitor_target.change_state("rewritten", Event.INFO)
           io = self.open_file()
           self.update_seek(0)
         else:
           io.seek(where)
-
-
 
     if io is None: return
 
