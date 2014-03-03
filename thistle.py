@@ -428,28 +428,8 @@ class LogMonitor(Monitor): # {{{
       if io is None:
         return
     else:
-      try:
-        new_size = os.path.getsize(self.attrs["file"])
-      except:
-        self.monitor_target.change_state("not_readable_error", Event.ERROR)
-        self.monitor_target["__io__"] = None
-        return
-        
-      if new_size < io.tell():
-        self.monitor_target.change_state("truncated", Event.INFO)
-        io = self.open_file()
-        self.update_seek(0)
-      else:
-        where = io.tell()
-        io.seek(0)
-        if self.monitor_target["__header__"] != io.readline().strip():
-          if where != 0: 
-            self.monitor_target.change_state("rewritten", Event.INFO)
-          io = self.open_file()
-          self.update_seek(0)
-        else:
-          io.seek(where)
-
+      self.close_file()
+    io = self.open_file()
     if io is None: return
 
     while True:
